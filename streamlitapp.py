@@ -95,7 +95,7 @@ CLASS_NAMES = {
 SHORT_NAMES = ["akiec", "bcc", "bkl", "df", "mel", "nv", "vasc"]
 
 MODEL_PATHS = {
-    "Model 1 (Recommended)": "": "models/best_model.h5",
+    "Model 1 (Recommended)" : "models/best_model.h5",
     "InceptionV3": "models/InceptionV3_HAM10000.h5",
     "MobileNetV2": "models/MobileNetV2_HAM10000.h5",
     "DenseNet121": "models/DenseNet121_HAM10000.h5",
@@ -103,7 +103,7 @@ MODEL_PATHS = {
     "EfficientNetB0": "models/EfficientNetB0_HAM10000.h5",
     "EfficientNetB3": "models/EfficientNetB3_HAM10000.h5",
     "ResNet101": "models/ResNet101_HAM10000.h5",
-    "ResNet50": "models/ResNet50_HAM10000.h5",
+    "ResNet50": "models/ResNet50_HAM10000.h5"
 }
 
 # ==================== LOAD MODELS ====================
