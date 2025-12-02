@@ -6,143 +6,121 @@ from tensorflow.keras.models import load_model
 from tensorflow.keras.preprocessing import image
 from PIL import Image
 import cv2 as cv
-import traceback
 
-st.set_page_config(layout="wide", page_title="DERMALYTICS")
+# Critical fix for Streamlit Cloud + OpenCV
+os.environ["OPENCV_VIDEOIO_MSP_BACKENDS"] = "ANY"
+os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "dummy"
+
+st.set_page_config(layout="wide", page_title="DERMALYTICS - Skin Lesion AI")
 
 # ==================== CONFIG ====================
-CLASS_NAMES = {
-    0: "akiec", 1: "bcc", 2: "bkl", 3: "df",
-    4: "mel", 5: "nv", 6: "vasc"
-}
+CLASS_NAMES = ["akiec", "bcc", "bkl", "df", "mel", "nv", "vasc"]
 
-# IMPORTANT — RELATIVE PATHS FOR GITHUB
 MODEL_PATHS = {
-    "Model 1 (Recommended)"      : "models/best_model.h5",
-    "Model 2 (InceptionV3)"      : "models/InceptionV3_HAM10000.h5",
-    "Model 3 (MobileNetV2)"      : "models/MobileNetV2_HAM10000.h5",
-    "Model 4 (DenseNet121)"      : "models/DenseNet121_HAM10000.h5",
-    "Model 5 (Xception)"         : "models/Xception_HAM10000.h5",
-    "Model 6 (EfficientNetB0)"   : "models/EfficientNetB0_HAM10000.h5",
-    "Model 7 (EfficientNetB3)"   : "models/EfficientNetB3_HAM10000.h5",
-    "Model 8 (ResNet101)"        : "models/ResNet101_HAM10000.h5",
-    "Model 9 (ResNet50)"         : "models/ResNet50_HAM10000.h5"
+    "Model 1 (Recommended)"       : "models/best_model.h5",
+    "InceptionV3"                 : "models/InceptionV3_HAM10000.h5",
+    "MobileNetV2"                 : "models/MobileNetV2_HAM10000.h5",
+    "DenseNet121"                 : "models/DenseNet121_HAM10000.h5",
+    "Xception"                    : "models/Xception_HAM10000.h5",
+    "EfficientNetB0"              : "models/EfficientNetB0_HAM10000.h5",
+    "EfficientNetB3"              : "models/EfficientNetB3_HAM10000.h5",
+    "ResNet101"                   : "models/ResNet101_HAM10000.h5",
+    "ResNet50"                    : "models/ResNet50_HAM10000.h5",
 }
 
 # ==================== LOAD MODELS ====================
 @st.cache_resource
-def load_all_models():
+def load_models():
     models = {}
     for name, path in MODEL_PATHS.items():
         if os.path.exists(path):
-            with st.spinner(f"Loading {name} ..."):
+            with st.spinner(f"Loading {name}..."):
                 try:
                     model = load_model(path, compile=False)
                     models[name] = model
-                    st.success(f"{name} loaded successfully")
+                    st.success(f"✓ {name}")
                 except Exception as e:
-                    st.error(f"❗ Failed to load {name}")
-                    st.write(str(e))
+                    st.error(f"✗ {name}: {e}")
         else:
-            st.warning(f"⚠️ Model file not found: {path}")
+            st.warning(f"⚠ {name} → {path} not found")
     return models
 
-models = load_all_models()
+models = load_models()
 
-# ==================== PREPROCESS ====================
-def preprocess_image_pil(img):
+# ==================== PREPROCESS & GRADCAM ====================
+def preprocess(img):
     img = img.resize((224, 224))
     arr = image.img_to_array(img) / 255.0
-    return np.expand_dims(arr, axis=0), np.array(img)
+    return np.expand_dims(arr, 0), np.array(img)
 
-
-# ==================== GRAD-CAM++ ====================
-def find_last_conv_layer(model):
-    for layer in reversed(model.layers):
-        if isinstance(layer, (tf.keras.layers.Conv2D, tf.keras.layers.DepthwiseConv2D)):
-            return layer.name
-    raise ValueError("No conv layer found")
-
-def get_gradcam_plus_plus(model, img_array):
+def get_gradcam(model, img_array):
     try:
-        target_layer_name = find_last_conv_layer(model)
-        target_layer = model.get_layer(target_layer_name)
-        model_output = model.output if not isinstance(model.output, list) else model.output[0]
+        # Find last conv layer
+        for layer in reversed(model.layers):
+            if len(layer.output_shape) == 4:
+                last_conv = layer
+                break
+        else:
+            return np.zeros((224,224,3), np.uint8)
 
-        grad_model = tf.keras.models.Model(model.inputs, [target_layer.output, model_output])
+        grad_model = tf.keras.models.Model(
+            model.inputs, [last_conv.output, model.output]
+        )
 
         with tf.GradientTape() as tape:
-            conv_outputs, predictions = grad_model(img_array)
-            class_idx = tf.argmax(predictions[0])
-            loss = predictions[:, class_idx]
+            conv_out, preds = grad_model(img_array)
+            class_idx = tf.argmax(preds[0])
+            loss = preds[:, class_idx]
 
-        grads = tape.gradient(loss, conv_outputs)
-        grads = tf.nn.relu(grads)
-
-        weights = tf.reduce_mean(grads, axis=(1, 2))
-        cam = tf.reduce_sum(weights[:, None, None, :] * conv_outputs, axis=-1)
-        cam = tf.nn.relu(cam)
-        cam = cam.numpy()[0]
-
-        cam = (cam - cam.min()) / (cam.max() - cam.min() + 1e-8)
+        grads = tape.gradient(loss, conv_out)[0]
+        weights = tf.reduce_mean(grads, axis=(0, 1))
+        cam = tf.reduce_sum(weights * conv_out[0], axis=-1)
+        cam = np.maximum(cam, 0)
+        cam = cv.resize(cam.numpy(), (224, 224))
+        cam = cam / (cam.max() + 1e-8)
         cam = np.uint8(255 * cam)
-        cam = cv2.resize(cam, (224, 224))
-        heatmap = cv2.applyColorMap(cam, cv2.COLORMAP_JET)
-        return heatmap, predictions.numpy()[0], class_idx
-    except Exception as e:
-        st.error("❗ Grad-CAM++ failed")
-        st.write(str(e))
-        traceback.print_exc()
-        dummy = np.zeros((224, 224), dtype=np.uint8)
-        return cv2.applyColorMap(dummy, cv2.COLORMAP_JET), np.zeros(7), 0
-
+        heatmap = cv.applyColorMap(cam, cv.COLORMAP_JET)
+        return heatmap
+    except:
+        return np.zeros((224,224,3), np.uint8)
 
 # ==================== UI ====================
-st.title("🩺 DERMALYTICS – Skin Lesion Classifier")
-st.write("Upload an image and let AI detect skin lesion type with heatmap explanation.")
+st.title("DERMALYTICS – AI Skin Lesion Classifier")
+st.markdown("Upload a dermatoscopic image → get diagnosis + Grad-CAM++ explanation")
 
-if len(models) == 0:
-    st.error("❗ No models loaded. Please check the /models/ folder in GitHub.")
-else:
-    model_name = st.selectbox("Select a model:", list(models.keys()))
-    model = models[model_name]
+if not models:
+    st.error("No models found! Make sure your `.h5` files are in the `models/` folder.")
+    st.stop()
 
-uploaded_file = st.file_uploader("Upload an image:", type=["jpg", "png", "jpeg"])
+selected_model = st.selectbox("Choose Model", list(models.keys()))
+model = models[selected_model]
 
-if uploaded_file and len(models) > 0:
-    pil_img = Image.open(uploaded_file).convert("RGB")
-    st.image(pil_img, caption="Uploaded Image", width=300)
+uploaded = st.file_uploader("Upload skin lesion image", type=["jpg", "jpeg", "png"])
 
-    img_array, display_img = preprocess_image_pil(pil_img)
+if uploaded:
+    img = Image.open(uploaded).convert("RGB")
+    st.image(img, caption="Uploaded Image", width=300)
 
-    with st.spinner("Running prediction..."):
-        preds = model.predict(img_array)[0]
-        class_id = np.argmax(preds)
-        confidence = preds[class_id]
+    arr, display_img = preprocess(img)
 
-        heatmap, cam_probs, cam_class = get_gradcam_plus_plus(model, img_array)
+    with st.spinner("Analyzing..."):
+        pred = model.predict(arr)[0]
+        idx = np.argmax(pred)
+        confidence = pred[idx]
 
-        overlay = cv2.addWeighted(cv2.cvtColor(display_img, cv2.COLOR_RGB2BGR), 0.5, heatmap, 0.5, 0)
-        overlay_rgb = cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB)
-
+        heatmap = get_gradcam(model, arr)
+        overlay = cv.addWeighted(display_img, 0.6, heatmap, 0.4, 0)
 
     col1, col2 = st.columns(2)
 
-    # ========== LEFT ==========
     with col1:
-        st.subheader("🔥 Grad-CAM++ Heatmap")
-        st.image(heatmap, channels="BGR")
+        st.subheader("Grad-CAM++ Heatmap")
+        st.image(heatmap, channels="BGR", use_column_width=True)
+        st.subheader("Overlay")
+        st.image(overlay, use_column_width=True)
 
-        st.subheader("🔍 Overlay")
-        st.image(overlay_rgb, channels="RGB")
-
-    # ========== RIGHT ==========
     with col2:
         st.subheader("Prediction")
-        st.write(f"**Class:** {CLASS_NAMES[class_id]}")  
-        st.write(f"**Confidence:** {confidence * 100:.2f}%")
+        st.metric("Diagnosis", CLASS_NAMES[idx].upper(), f"{confidence:.1%}")
 
-        st.write("---")
-        st.subheader("All Probabilities:")
-        for i, p in enumerate(preds):
-            st.write(f"{CLASS_NAMES[i]} → {p*100:.2f}%")
+        st.bar_chart({CLASS_NAMES[i]: float(pred[i]) for i in range(7)})
