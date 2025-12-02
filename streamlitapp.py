@@ -5,7 +5,7 @@ import tensorflow as tf
 from tensorflow.keras.models import load_model
 from tensorflow.keras.preprocessing import image
 from PIL import Image
-import cv2
+import cv2 as cv
 import traceback
 
 st.set_page_config(layout="wide", page_title="DERMALYTICS")
