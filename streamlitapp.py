@@ -17,7 +17,7 @@ st.set_page_config(layout="wide", page_title="DERMALYTICS - Skin Lesion AI")
 CLASS_NAMES = ["akiec", "bcc", "bkl", "df", "mel", "nv", "vasc"]
 
 MODEL_PATHS = {
-    "Model 1 (Recommended)"       : "models/best_model.h5",
+    "Best /model"                 : "models/best_model.h5",
     "InceptionV3"                 : "models/InceptionV3_HAM10000.h5",
     "MobileNetV2"                 : "models/MobileNetV2_HAM10000.h5",
     "DenseNet121"                 : "models/DenseNet121_HAM10000.h5",
