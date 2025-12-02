@@ -6,7 +6,6 @@ from tensorflow.keras.models import load_model
 from tensorflow.keras.preprocessing import image
 from PIL import Image
 import cv2
-import base64
 import traceback
 
 st.set_page_config(layout="wide", page_title="DERMALYTICS")
@@ -17,16 +16,17 @@ CLASS_NAMES = {
     4: "mel", 5: "nv", 6: "vasc"
 }
 
+# IMPORTANT — RELATIVE PATHS FOR GITHUB
 MODEL_PATHS = {
-    "Model 1 (Recommended)"      : r"C:\Users\lenovo\Documents\CAPSTONE\CAPSTONE C\SourceCode\models\best_model.h5",
-    "Model 2 (InceptionV3)"      : r"C:\Users\lenovo\Documents\CAPSTONE\CAPSTONE C\SourceCode\models\InceptionV3_HAM10000.h5",
-    "Model 3 (MobileNetV2)"      : r"C:\Users\lenovo\Documents\CAPSTONE\CAPSTONE C\SourceCode\models\MobileNetV2_HAM10000.h5",
-    "Model 4 (DenseNet121)"      : r"C:\Users\lenovo\Documents\CAPSTONE\CAPSTONE C\SourceCode\models\DenseNet121_HAM10000.h5",
-    "Model 5 (Xception)"         : r"C:\Users\lenovo\Documents\CAPSTONE\CAPSTONE C\SourceCode\models\Xception_HAM10000.h5",
-    "Model 6 (EfficientNetB0)"   : r"C:\Users\lenovo\Documents\CAPSTONE\CAPSTONE C\SourceCode\models\EfficientNetB0_HAM10000.h5",
-    "Model 7 (EfficientNetB3)"   : r"C:\Users\lenovo\Documents\CAPSTONE\CAPSTONE C\SourceCode\models\EfficientNetB3_HAM10000.h5",
-    "Model 8 (ResNet101)"        : r"C:\Users\lenovo\Documents\CAPSTONE\CAPSTONE C\SourceCode\models\ResNet101_HAM10000.h5",
-    "Model 9 (ResNet50)"         : r"C:\Users\lenovo\Documents\CAPSTONE\CAPSTONE C\SourceCode\models\ResNet50_HAM10000.h5"
+    "Model 1 (Recommended)"      : "models/best_model.h5",
+    "Model 2 (InceptionV3)"      : "models/InceptionV3_HAM10000.h5",
+    "Model 3 (MobileNetV2)"      : "models/MobileNetV2_HAM10000.h5",
+    "Model 4 (DenseNet121)"      : "models/DenseNet121_HAM10000.h5",
+    "Model 5 (Xception)"         : "models/Xception_HAM10000.h5",
+    "Model 6 (EfficientNetB0)"   : "models/EfficientNetB0_HAM10000.h5",
+    "Model 7 (EfficientNetB3)"   : "models/EfficientNetB3_HAM10000.h5",
+    "Model 8 (ResNet101)"        : "models/ResNet101_HAM10000.h5",
+    "Model 9 (ResNet50)"         : "models/ResNet50_HAM10000.h5"
 }
 
 # ==================== LOAD MODELS ====================
@@ -39,11 +39,12 @@ def load_all_models():
                 try:
                     model = load_model(path, compile=False)
                     models[name] = model
-                    st.success(f"{name} loaded")
-                except:
-                    st.error(f"Failed to load {name}")
+                    st.success(f"{name} loaded successfully")
+                except Exception as e:
+                    st.error(f"❗ Failed to load {name}")
+                    st.write(str(e))
         else:
-            st.warning(f"Model file missing: {path}")
+            st.warning(f"⚠️ Model file not found: {path}")
     return models
 
 models = load_all_models()
@@ -89,7 +90,7 @@ def get_gradcam_plus_plus(model, img_array):
         heatmap = cv2.applyColorMap(cam, cv2.COLORMAP_JET)
         return heatmap, predictions.numpy()[0], class_idx
     except Exception as e:
-        st.error("Grad-CAM++ failed")
+        st.error("❗ Grad-CAM++ failed")
         st.write(str(e))
         traceback.print_exc()
         dummy = np.zeros((224, 224), dtype=np.uint8)
@@ -100,17 +101,19 @@ def get_gradcam_plus_plus(model, img_array):
 st.title("🩺 DERMALYTICS – Skin Lesion Classifier")
 st.write("Upload an image and let AI detect skin lesion type with heatmap explanation.")
 
-model_name = st.selectbox("Select a model:", list(models.keys()))
+if len(models) == 0:
+    st.error("❗ No models loaded. Please check the /models/ folder in GitHub.")
+else:
+    model_name = st.selectbox("Select a model:", list(models.keys()))
+    model = models[model_name]
 
 uploaded_file = st.file_uploader("Upload an image:", type=["jpg", "png", "jpeg"])
 
-if uploaded_file:
+if uploaded_file and len(models) > 0:
     pil_img = Image.open(uploaded_file).convert("RGB")
-    st.image(pil_img, caption="Uploaded Image")
+    st.image(pil_img, caption="Uploaded Image", width=300)
 
     img_array, display_img = preprocess_image_pil(pil_img)
-
-    model = models[model_name]
 
     with st.spinner("Running prediction..."):
         preds = model.predict(img_array)[0]
@@ -125,6 +128,7 @@ if uploaded_file:
 
     col1, col2 = st.columns(2)
 
+    # ========== LEFT ==========
     with col1:
         st.subheader("🔥 Grad-CAM++ Heatmap")
         st.image(heatmap, channels="BGR")
@@ -132,6 +136,7 @@ if uploaded_file:
         st.subheader("🔍 Overlay")
         st.image(overlay_rgb, channels="RGB")
 
+    # ========== RIGHT ==========
     with col2:
         st.subheader("Prediction")
         st.write(f"**Class:** {CLASS_NAMES[class_id]}")  
@@ -141,4 +146,3 @@ if uploaded_file:
         st.subheader("All Probabilities:")
         for i, p in enumerate(preds):
             st.write(f"{CLASS_NAMES[i]} → {p*100:.2f}%")
-
